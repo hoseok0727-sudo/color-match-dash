@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Color Match Dash</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;font-family:Inter,sans-serif;background:linear-gradient(#eef2ff,#f6f7fb);color:#111827}
+  .wrap{display:flex;align-items:center;justify-content:center;height:100%;padding:20px}
+  .card{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,0.1);padding:24px;max-width:960px;width:100%;display:flex;flex-direction:column;align-items:center}
+  h1{margin:0 0 10px;font-size:28px;font-weight:800}
+  .muted{color:#6b7280;font-size:14px}
+  .hud{display:flex;gap:20px;margin-bottom:20px}
+  .hud .box{background:#f8fafc;padding:10px 14px;border-radius:8px;text-align:center;min-width:100px}
+  .color-circle{width:180px;height:180px;border-radius:50%;margin-bottom:12px;box-shadow:0 8px 20px rgba(0,0,0,0.06)}
+  .buttons-row{display:grid;gap:12px;width:100%;max-width:500px;margin-top:20px}
+  .btn{padding:12px;border-radius:8px;border:0;cursor:pointer;font-weight:600;font-size:15px;color:#fff;transition:transform .1s}
+  .btn:active{transform:translateY(1px)}
+  .toggle-row{margin-top:12px;}
+  .toggle-btn{padding:6px 12px;border-radius:6px;border:1px solid #d1d5db;background:#f3f4f6;color:#111827;cursor:pointer;font-size:14px;}
+  .toggle-btn.active{background:#6366f1;color:#fff;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Color Match Dash</h1>
+    <div class="muted">원 안의 색상과 같은 버튼을 클릭하세요!</div>
+    <div class="hud">
+      <div class="box"><div class="muted">점수</div><div id="score">0</div></div>
+      <div class="box"><div class="muted">남은 시간</div><div id="timeLeft">0.0s</div></div>
+    </div>
+    <div id="targetCircle" class="color-circle"></div>
+    <div class="toggle-row">
+      <button id="toggleNameBtn" class="toggle-btn active">색상 이름 표시</button>
+    </div>
+    <div id="targetName" class="muted"></div>
+    <div class="buttons-row" id="buttonsRow"></div>
+    <!-- 사운드 소스 미리 로딩 (정답, 오답) -->
+    <audio id="audio-correct" src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa1c90.mp3"></audio>
+    <audio id="audio-wrong" src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa1c90.mp3"></audio>
+  </div>
+</div>
+<script>
+const COLORS=[
+  {name:'RED',rgb:[239,68,68]},{name:'GREEN',rgb:[34,197,94]},{name:'BLUE',rgb:[59,130,246]},
+  {name:'YELLOW',rgb:[245,158,11]},{name:'PURPLE',rgb:[124,58,237]},{name:'TEAL',rgb:[20,184,166]},
+  {name:'PINK',rgb:[236,72,153]},{name:'GRAY',rgb:[113,113,122]},{name:'ORANGE',rgb:[249,115,22]},
+  {name:'BROWN',rgb:[120,63,4]},{name:'CYAN',rgb:[6,182,212]},{name:'MAGENTA',rgb:[202,0,130]}
+];
+let score=0,currentColor=null,timeLimit=4.0,startTime=0,timer=null,optionsCount=4,showName=true,gameActive=true;
+const scoreEl=document.getElementById('score');
+const timeEl=document.getElementById('timeLeft');
+const targetCircle=document.getElementById('targetCircle');
+const targetName=document.getElementById('targetName');
+const buttonsRow=document.getElementById('buttonsRow');
+const toggleNameBtn=document.getElementById('toggleNameBtn');
+const audioCorrect=document.getElementById('audio-correct');
+const audioWrong=document.getElementById('audio-wrong');
+
+// 사운드: 정답/오답 효과음 URL은 원하는 것으로 교체 가능
+audioCorrect.src="https://cdn.pixabay.com/audio/2022/02/23/audio_115b9f1dc4.mp3"; // 정답 효과음
+audioWrong.src="https://cdn.pixabay.com/audio/2022/03/15/audio_116b430b7b.mp3";   // 오답 효과음
+
+function rgbCss(rgb){return`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`}
+function pick(n){return Math.floor(Math.random()*n)}
+function setRound(){
+  if(score>0&&score%5===0&&optionsCount<COLORS.length) optionsCount++;
+  currentColor=COLORS[pick(COLORS.length)];
+  targetCircle.style.background=rgbCss(currentColor.rgb);
+  targetName.textContent=currentColor.name;
+  targetName.style.display=showName?"block":"none";
+  renderButtons();
+  startTime=performance.now();
+  gameActive=true;
+}
+function renderButtons(){
+  buttonsRow.innerHTML='';
+  buttonsRow.style.gridTemplateColumns=`repeat(${Math.ceil(optionsCount/2)},1fr)`;
+  const opts=new Set();
+  while(opts.size<optionsCount) opts.add(pick(COLORS.length));
+  if(![...opts].includes(COLORS.indexOf(currentColor))) opts.delete([...opts][pick(opts.size)]),opts.add(COLORS.indexOf(currentColor));
+  opts.forEach(i=>{
+    const c=COLORS[i];
+    const b=document.createElement('button');
+    b.className='btn';b.style.background=rgbCss(c.rgb);b.textContent=c.name;
+    b.onclick=()=>{
+      if(!gameActive) return;
+      if(c===currentColor){
+        playSound('correct');
+        score++;scoreEl.textContent=score;timeLimit=Math.max(0.9,timeLimit-0.05);
+        setRound();
+      }else{
+        playSound('wrong');
+        gameOver();
+      }
+    };
+    buttonsRow.appendChild(b);
+  });
+}
+function updateTime(){
+  if(!gameActive) return;
+  const left=Math.max(0,timeLimit-(performance.now()-startTime)/1000);
+  timeEl.textContent=left.toFixed(1)+'s';
+  if(left<=0) gameOver();
+}
+function startGame(){
+  score=0;optionsCount=4;timeLimit=4.0;scoreEl.textContent=0;
+  setRound();
+  if(timer) clearInterval(timer);
+  timer=setInterval(updateTime,100);
+}
+function gameOver(){
+  gameActive=false;
+  clearInterval(timer);
+  playSound('wrong');
+  setTimeout(()=>{
+    alert(`게임 오버! 점수: ${score}`);
+    startGame();
+  }, 100); // 사운드가 먼저 재생될 수 있도록 약간 딜레이
+}
+function playSound(type){
+  try{
+    if(type==='correct'){
+      audioCorrect.currentTime=0; audioCorrect.play();
+    }else if(type==='wrong'){
+      audioWrong.currentTime=0; audioWrong.play();
+    }
+  }catch(e){}
+}
+toggleNameBtn.onclick=()=>{
+  showName=!showName;
+  targetName.style.display=showName?"block":"none";
+  toggleNameBtn.classList.toggle('active',showName);
+  toggleNameBtn.textContent=showName?"색상 이름 표시":"색상 이름 숨기기";
+};
